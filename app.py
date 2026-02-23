@@ -11,6 +11,7 @@ st.markdown(
     <head>
       <meta name="apple-mobile-web-app-capable" content="yes">
       <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+      <link rel="apple-touch-icon" href="https://your-icon-url.com/icon.png">
     </head>
     """,
     unsafe_allow_html=True
