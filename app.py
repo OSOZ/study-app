@@ -5,6 +5,16 @@ import json
 # --- 1. CONFIGURATION & SECRETS ---
 st.set_page_config(page_title="GCP ACE Study Partner", layout="centered", page_icon="🚀")
 
+# ADD THIS SNIPPET TO HIDE THE ADDRESS BAR ON IPHONE:
+st.markdown(
+    """
+    <head>
+      <meta name="apple-mobile-web-app-capable" content="yes">
+      <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    </head>
+    """,
+    unsafe_allow_html=True
+)
 # Retrieve API Key from Streamlit Secrets
 api_key = st.secrets.get("GEMINI_API_KEY")
 
