@@ -2,62 +2,108 @@ import streamlit as st
 import google.generativeai as genai
 import json
 
-# App Configuration
-st.set_page_config(page_title="GCP ACE Study Partner", layout="centered")
-st.title("🚀 GCP ACE Flashcard Partner")
+# --- 1. CONFIGURATION & SECRETS ---
+st.set_page_config(page_title="GCP ACE Study Partner", layout="centered", page_icon="🚀")
 
-# Sidebar for API Key
-with st.sidebar:
-    api_key = st.text_input("Enter Gemini API Key", type="password")
-    if api_key:
-        genai.configure(api_key=api_key)
-    topic = st.selectbox("Choose Topic", ["IAM", "GKE", "Networking", "Storage", "SAP on GCP"])
+# Retrieve API Key from Streamlit Secrets
+api_key = st.secrets.get("GEMINI_API_KEY")
 
-# Session State for Flashcards
+if api_key:
+    genai.configure(api_key=api_key)
+else:
+    st.error("⚠️ API Key not found! Add 'GEMINI_API_KEY' to Streamlit Secrets.")
+    st.stop()
+
+# --- 2. SESSION STATE MANAGEMENT ---
 if "cards" not in st.session_state:
     st.session_state.cards = []
     st.session_state.current_index = 0
-    st.session_state.score_history = []
+    st.session_state.session_complete = False
 
-# Function to generate cards
-def generate_cards():
-    model = genai.GenerativeModel('gemini-1.5-flash')
-    prompt = f"Generate 5 difficult GCP Associate Cloud Engineer exam flashcards about {topic}. Output ONLY a JSON list: [{{'q': 'scenario-based question', 'a': 'detailed answer'}}] "
-    response = model.generate_content(prompt)
-    try:
-        # Clean JSON string and load
-        content = response.text.replace('```json', '').replace('```', '').strip()
-        st.session_state.cards = json.loads(content)
-        st.session_state.current_index = 0
-    except:
-        st.error("Failed to parse AI response. Try again.")
+# --- 3. CORE FUNCTIONS ---
+def generate_cards(topic):
+    """Generates flashcards using a fallback model list to avoid 404 errors."""
+    # 2026 Priority List: Gemini 3 Flash is fastest, 2.5 is the stable fallback
+    model_list = ['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.0-flash']
+    
+    success = False
+    with st.spinner(f"AI is generating {topic} flashcards..."):
+        for model_name in model_list:
+            try:
+                model = genai.GenerativeModel(model_name)
+                prompt = (
+                    f"Generate 5 scenario-based flashcards for the GCP Associate Cloud Engineer exam "
+                    f"focused on {topic}. Format your response ONLY as a JSON list like this: "
+                    "[{\"q\": \"scenario question\", \"a\": \"detailed explanation\"}]"
+                )
+                response = model.generate_content(prompt)
+                
+                # Clean the response text for JSON parsing
+                raw_json = response.text.replace('```json', '').replace('```', '').strip()
+                st.session_state.cards = json.loads(raw_json)
+                st.session_state.current_index = 0
+                st.session_state.session_complete = False
+                success = True
+                break # Exit loop if model works
+            except Exception:
+                continue # Try the next model if 404 or error occurs
+        
+    if not success:
+        st.error("Could not connect to any Gemini models. Please check your API key and quota.")
 
-if st.button("Generate New Cards"):
-    generate_cards()
+# --- 4. UI LAYOUT ---
+st.title("🛡️ GCP ACE: Flashcard Partner")
+st.write("Master GCP Associate Cloud Engineer scenarios on the go.")
 
-# Display Flashcard
-if st.session_state.cards:
+topic = st.selectbox("Select Study Domain:", 
+                    ["IAM & Security", "GKE & Containers", "Networking", "Storage & Databases", "SAP on GCP Admin"])
+
+if st.button("Generate Study Session"):
+    generate_cards(topic)
+
+# --- 5. FLASHCARD DISPLAY LOGIC ---
+if st.session_state.cards and not st.session_state.session_complete:
     card = st.session_state.cards[st.session_state.current_index]
     
+    st.divider()
     st.subheader(f"Card {st.session_state.current_index + 1} of 5")
-    st.info(card['q'])
     
-    user_answer = st.text_area("Your Answer:", key=f"ans_{st.session_state.current_index}")
+    # Question Area
+    st.info(f"**SCENARIO:** \n\n {card['q']}")
     
-    if st.button("Submit & Rate"):
-        # AI Rating Logic
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        rating_prompt = f"Question: {card['q']}\nCorrect Answer: {card['a']}\nUser Answer: {user_answer}\nRate this answer 1-10 and explain briefly."
-        rating_res = model.generate_content(rating_prompt)
-        
-        st.write("---")
-        st.success(f"**Correct Answer:** {card['a']}")
-        st.write(f"**AI Feedback:** {rating_res.text}")
-        
-        if st.session_state.current_index < 4:
-            if st.button("Next Card"):
+    # User Input
+    user_ans = st.text_area("Your reasoning/answer:", key=f"input_{st.session_state.current_index}")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("Check Answer"):
+            st.success(f"**EXPLANATION:** \n\n {card['a']}")
+            
+            # AI Feedback on your specific answer
+            try:
+                model = genai.GenerativeModel('gemini-1.5-flash') # Simplified model for quick feedback
+                feedback_prompt = f"Question: {card['q']}\nIdeal Answer: {card['a']}\nUser's Answer: {user_ans}\nRate user answer 1-10 and explain briefly."
+                feedback = model.generate_content(feedback_prompt)
+                st.write(f"**AI Score:** {feedback.text}")
+            except:
+                st.write("*(Feedback rating currently unavailable)*")
+                
+    with col2:
+        if st.button("Next Card ➡️"):
+            if st.session_state.current_index < 4:
                 st.session_state.current_index += 1
                 st.rerun()
-        else:
-            st.balloons()
-            st.write("🏁 Session Complete! Copy the feedback above for your notes.")
+            else:
+                st.session_state.session_complete = True
+                st.rerun()
+
+# --- 6. SESSION SUMMARY ---
+if st.session_state.session_complete:
+    st.balloons()
+    st.success("🎉 Session Complete!")
+    st.write("Great job! You've reviewed 5 key scenarios. Keep practicing daily to build durable knowledge.")
+    if st.button("Start New Topic"):
+        st.session_state.cards = []
+        st.session_state.session_complete = False
+        st.rerun()
